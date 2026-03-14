@@ -35,7 +35,7 @@
     .row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0; }
     label { min-width: 10rem; font-size: 0.95rem; }
     input[type="number"] { width: 6rem; padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--accent); border-radius: 4px; color: var(--text); font-family: inherit; font-size: 0.95rem; }
-    select { width: 6rem; padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--accent); border-radius: 4px; color: var(--text); font-family: inherit; font-size: 0.95rem; }
+    select { padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--accent); border-radius: 4px; color: var(--text); font-family: inherit; font-size: 0.95rem; }
     button { padding: 0.5rem 1rem; background: var(--accent); color: var(--bg); border: none; border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 0.9rem; }
     button:hover { filter: brightness(1.15); }
     button.secondary { background: var(--surface); color: var(--text); }
@@ -128,6 +128,7 @@
   var tradeFormVisible = false;
   var warFormVisible = false;
   var lastRenderedStep = -1;
+  var currentState = null;
   var BUSHELS_PER_PERSON = 20, ACRES_PER_PERSON = 10, BUSHELS_PER_ACRE_PLANT = 0.5;
   var HARVEST_MIN = 1, HARVEST_MAX = 5;
   var PLAGUE_CHANCE = 0.15;
@@ -168,7 +169,8 @@
       curPrice: null,
       step: 0,
       fedBushels: null,
-      lastWar: null
+      lastWar: null,
+      warDeclaredThisYear: false
     };
   }
 
@@ -193,6 +195,11 @@
     } catch (e) { return null; }
   }
 
+  function getState() {
+    if (currentState != null) return currentState;
+    return getStateFromUrl() || defaultState(parseInt(document.getElementById('numPlayers').value, 10));
+  }
+
   function getStateFromUrl() {
     var params = new URLSearchParams(window.location.search);
     var g = params.get('g');
@@ -212,6 +219,7 @@
     }
     if (state.step == null) state.step = 0;
     if (state.fedBushels == null) state.fedBushels = null;
+    if (state.warDeclaredThisYear == null) state.warDeclaredThisYear = false;
     return state;
   }
 
@@ -243,6 +251,7 @@
       state.a[targetIdx] = state.a[targetIdx] - acresGained;
     }
     state.lastWar = { from: c, to: targetIdx, attackerDead: attackerDead, defenderDead: defenderDead, acresGained: acresGained, attackerWins: attackerWins };
+    state.warDeclaredThisYear = true;
     return state;
   }
 
@@ -301,7 +310,10 @@
     state.lastWar = null;
     state.step = 0;
     state.c = (state.c + 1) % state.n;
-    if (state.c === 0) state.y++;
+    if (state.c === 0) {
+      state.y++;
+      state.warDeclaredThisYear = false;
+    }
     return state;
   }
 
@@ -499,10 +511,13 @@
       tradeOfferEl.classList.remove('hidden');
       document.getElementById('btnAccept').onclick = function() {
         state = applyTrade(JSON.parse(JSON.stringify(state)));
+        currentState = state;
         render(state);
       };
       document.getElementById('btnDecline').onclick = function() {
+        state = JSON.parse(JSON.stringify(state));
         state.trade = null;
+        currentState = state;
         render(state);
       };
     }
@@ -540,7 +555,7 @@
     document.getElementById('btnTradeCancel').classList.toggle('hidden', !showTradeForm);
     document.getElementById('btnTradeCancel').style.display = showTrade ? '' : 'none';
 
-    var showWar = state.n > 1 && step === 0;
+    var showWar = state.n > 1 && step === 0 && !state.warDeclaredThisYear;
     document.getElementById('btnWar').style.display = showWar ? '' : 'none';
     var warRowEl = document.getElementById('warRow');
     var showWarForm = showWar && warFormVisible;
@@ -581,7 +596,9 @@
 
     if (step === 0) {
       var hLand = helpersLand(state);
-      document.getElementById('helperLand').innerHTML = 'Land price: <strong>' + hLand.price + '</strong> bushels/acre. You can buy up to <strong>' + hLand.maxBuy + '</strong> acres or sell up to <strong>' + hLand.maxSell + '</strong> acres.';
+      var landHelp = 'Land price: <strong>' + hLand.price + '</strong> bushels/acre. You can buy up to <strong>' + hLand.maxBuy + '</strong> acres or sell up to <strong>' + hLand.maxSell + '</strong> acres.';
+      if (state.n > 1 && state.warDeclaredThisYear) landHelp += ' One war has already been declared this year.';
+      document.getElementById('helperLand').innerHTML = landHelp;
       document.getElementById('acres').value = 0;
       document.getElementById('err').textContent = '';
     } else if (step === 1) {
@@ -598,7 +615,7 @@
   }
 
   function onStepLand() {
-    var state = getStateFromUrl() || defaultState(parseInt(document.getElementById('numPlayers').value, 10));
+    var state = getState();
     if (state.y > 10 || (state.step || 0) !== 0) return;
     if (state.n > 1 && state.trade && state.trade.to === state.c) {
       document.getElementById('err').textContent = 'Resolve the pending trade (Accept or Decline) first.';
@@ -612,12 +629,12 @@
     }
     state = JSON.parse(JSON.stringify(state));
     state = doLandStep(state, acresDelta);
-    history.replaceState(null, '', window.location.pathname + '?g=' + encode(state));
+    currentState = state;
     render(state);
   }
 
   function onStepFeed() {
-    var state = getStateFromUrl() || defaultState(parseInt(document.getElementById('numPlayers').value, 10));
+    var state = getState();
     if (state.y > 10 || (state.step || 0) !== 1) return;
     var feedBushels = parseInt(document.getElementById('feed').value, 10) || 0;
     var errs = validateFeed(state, feedBushels);
@@ -627,12 +644,12 @@
     }
     state = JSON.parse(JSON.stringify(state));
     state = doFeedStep(state, feedBushels);
-    history.replaceState(null, '', window.location.pathname + '?g=' + encode(state));
+    currentState = state;
     render(state);
   }
 
   function onStepPlant() {
-    var state = getStateFromUrl() || defaultState(parseInt(document.getElementById('numPlayers').value, 10));
+    var state = getState();
     if (state.y > 10 || (state.step || 0) !== 2) return;
     var plantBushels = parseInt(document.getElementById('plant').value, 10) || 0;
     var errs = validatePlant(state, plantBushels);
@@ -642,16 +659,16 @@
     }
     state = JSON.parse(JSON.stringify(state));
     state = doPlantStepResolution(state, plantBushels);
-    history.replaceState(null, '', window.location.pathname + '?g=' + encode(state));
+    currentState = state;
     render(state);
   }
 
   function onEndTurn() {
-    var state = getStateFromUrl();
+    var state = getState();
     if (!state || state.y > 10 || (state.step || 0) !== 3) return;
     state = JSON.parse(JSON.stringify(state));
     state = advanceTurn(state);
-    history.replaceState(null, '', window.location.pathname + '?g=' + encode(state));
+    currentState = state;
     render(state);
   }
 
@@ -671,11 +688,15 @@
   }
 
   function declareWar() {
-    var state = getStateFromUrl();
+    var state = getState();
     if (!state || state.y > 10 || state.n < 2 || (state.step || 0) !== 0) return;
     var c = state.c;
     if (state.trade && state.trade.to === c) {
       document.getElementById('errWar').textContent = 'Resolve the pending trade first.';
+      return;
+    }
+    if (state.warDeclaredThisYear) {
+      document.getElementById('errWar').textContent = 'Only one war per year. One has already been declared this round.';
       return;
     }
     var targetIdx = parseInt(document.getElementById('warTarget').value, 10);
@@ -694,14 +715,14 @@
       return;
     }
     state = resolveWar(state, targetIdx, armySize);
-    history.replaceState(null, '', window.location.pathname + '?g=' + encode(state));
+    currentState = state;
     warFormVisible = false;
     document.getElementById('errWar').textContent = '';
     render(state);
   }
 
   function proposeTrade() {
-    var state = getStateFromUrl();
+    var state = getState();
     if (!state || state.y > 10 || state.n < 2) return;
     var c = state.c;
     var to = parseInt(document.getElementById('tradeTarget').value, 10);
@@ -743,7 +764,7 @@
     }
     state = JSON.parse(JSON.stringify(state));
     state.trade = { from: c, to: to, b: price, a: acres };
-    history.replaceState(null, '', window.location.pathname + '?g=' + encode(state));
+    currentState = state;
     render(state);
     document.getElementById('err').textContent = 'Offer sent. Next player will see it on their turn.';
   }
@@ -752,9 +773,9 @@
     var n = parseInt(document.getElementById('numPlayers').value, 10);
     var state = defaultState(n);
     state.curPrice = null;
+    currentState = state;
     document.getElementById('game').classList.remove('hidden');
     document.getElementById('setup').classList.add('hidden');
-    history.replaceState(null, '', window.location.pathname + '?g=' + encode(state));
     render(state);
   };
 
@@ -768,13 +789,13 @@
       proposeTrade();
     } else {
       tradeFormVisible = true;
-      var s = getStateFromUrl();
+      var s = getState();
       if (s) render(s);
     }
   };
   document.getElementById('btnTradeCancel').onclick = function() {
     tradeFormVisible = false;
-    var s = getStateFromUrl();
+    var s = getState();
     if (s) render(s);
   };
   document.getElementById('btnWar').onclick = function() {
@@ -782,20 +803,21 @@
       declareWar();
     } else {
       warFormVisible = true;
-      var s = getStateFromUrl();
+      var s = getState();
       if (s) render(s);
     }
   };
   document.getElementById('btnWarCancel').onclick = function() {
     warFormVisible = false;
     document.getElementById('errWar').textContent = '';
-    var s = getStateFromUrl();
+    var s = getState();
     if (s) render(s);
   };
   document.getElementById('btnDeclareWar').onclick = declareWar;
 
   var initialState = getStateFromUrl();
   if (initialState) {
+    currentState = initialState;
     document.getElementById('numPlayers').value = initialState.n;
     document.getElementById('game').classList.remove('hidden');
     document.getElementById('setup').classList.add('hidden');
