@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hamurabi Multiplayer</title>
+  <style>
+    :root {
+      --bg: #1e1915;
+      --surface: #3d3028;
+      --text: #e8dcc8;
+      --accent: #c9a227;
+      --warn: #e0a040;
+      --danger: #b85450;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 1rem;
+      max-width: 42rem;
+      margin-left: auto;
+      margin-right: auto;
+      font-size: 15px;
+      line-height: 1.5;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+    h1, h2 { font-size: 1.1rem; margin: 0 0 0.5rem; color: var(--accent); font-weight: 600; }
+    .bar { background: var(--surface); padding: 0.75rem 1rem; border-radius: 4px; margin-bottom: 1rem; }
+    .bar strong { color: var(--accent); }
+    .report { white-space: pre-wrap; background: var(--surface); padding: 1rem; border-radius: 4px; margin: 1rem 0; font-size: 0.95rem; line-height: 1.7; }
+    .row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0; }
+    label { min-width: 10rem; font-size: 0.95rem; }
+    input[type="number"] { width: 6rem; padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--accent); border-radius: 4px; color: var(--text); font-family: inherit; font-size: 0.95rem; }
+    select { width: 6rem; padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--accent); border-radius: 4px; color: var(--text); font-family: inherit; font-size: 0.95rem; }
+    button { padding: 0.5rem 1rem; background: var(--accent); color: var(--bg); border: none; border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 0.9rem; }
+    button:hover { filter: brightness(1.15); }
+    button.secondary { background: var(--surface); color: var(--text); }
+    .error { color: var(--danger); margin-top: 0.5rem; font-size: 0.9rem; }
+    .link-box { background: var(--surface); padding: 0.75rem; border-radius: 4px; margin: 1rem 0; word-break: break-all; font-size: 0.85rem; }
+    .link-box a { color: var(--accent); }
+    .ranking { margin-top: 1rem; font-size: 0.95rem; }
+    .ranking ol { padding-left: 1.25rem; }
+    .ranking li { margin: 0.25rem 0; }
+    .trade-panel { border: 1px solid var(--warn); border-radius: 4px; padding: 1rem; margin: 1rem 0; background: rgba(224,160,64,0.12); }
+    .helper-box { background: rgba(201,162,39,0.12); border: 1px solid var(--accent); border-radius: 4px; padding: 0.75rem 1rem; margin: 0.75rem 0; font-size: 0.9rem; }
+    .helper-box strong { color: var(--accent); }
+    .step-panel { margin: 0.5rem 0; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <h1>Hamurabi Multiplayer</h1>
+  <div id="setup" class="bar">
+    <p>Players: <input type="number" id="numPlayers" min="1" max="4" value="2"> <button id="btnNew">New game</button></p>
+  </div>
+  <div id="game" class="hidden">
+    <div class="bar">
+      <span><strong><span id="curPlayer"></span></strong> · Year <span id="curYear"></span> of 10</span>
+    </div>
+    <div id="tradeOffer" class="trade-panel hidden"></div>
+    <div id="report" class="report"></div>
+    <div id="inputs">
+      <div id="stepLand" class="step-panel hidden">
+        <div id="helperLand" class="helper-box"></div>
+        <div class="row"><label>Acres to buy (positive) or sell (negative):</label><input type="number" id="acres" value="0"></div>
+        <p class="error" id="err"></p>
+        <div id="tradeProposeRow" class="row hidden">
+          <p class="helper-box" style="margin: 0 0 0.5rem; width: 100%;">Trade offer: <strong>positive acres</strong> = you buy land from them (you pay price × acres); <strong>negative acres</strong> = you sell land to them (they pay you price × |acres|). <strong>Price</strong> is bushels per acre.</p>
+          <label>Trade with:</label><select id="tradeTarget"></select>
+          <label>Price (bushels/acre):</label><input type="number" id="tradeBushels" value="0" min="0" title="Price in bushels per acre">
+          <label>Acres (+ buy, − sell):</label><input type="number" id="tradeAcres" value="0" title="Positive = you buy from them, negative = you sell to them">
+        </div>
+        <div id="warRow" class="row hidden">
+          <p class="helper-box" style="margin: 0 0 0.5rem; width: 100%;">Declare war: choose a player and how many people to send as your army. The defender uses <strong>all</strong> their people. Both sides take casualties; you gain acres from the defender based on their losses.</p>
+          <label>Attack:</label><select id="warTarget"></select>
+          <label>Army (people):</label><input type="number" id="warArmy" value="10" min="1" title="People sent to fight">
+          <button id="btnDeclareWar">Declare war</button><button id="btnWarCancel" class="secondary">Cancel</button>
+        </div>
+        <p class="error" id="errWar"></p>
+        <div class="row"><button id="btnStepLand">Continue</button><button id="btnPropose" class="secondary">Propose trade</button><button id="btnWar" class="secondary">Declare war</button><button id="btnTradeCancel" class="secondary hidden">Cancel</button></div>
+      </div>
+      <div id="stepFeed" class="step-panel hidden">
+        <div id="helperFeed" class="helper-box"></div>
+        <div class="row"><label>Bushels to feed people:</label><input type="number" id="feed" value="2000"></div>
+        <p class="error" id="errFeed"></p>
+        <div class="row"><button id="btnStepFeed">Continue</button></div>
+      </div>
+      <div id="stepPlant" class="step-panel hidden">
+        <div id="helperPlant" class="helper-box"></div>
+        <div class="row"><label>Bushels to plant (½ per acre, max 10 acres/person):</label><input type="number" id="plant" value="500"></div>
+        <p class="error" id="errPlant"></p>
+        <div class="row"><button id="btnStepPlant">Continue</button></div>
+      </div>
+      <div id="stepShare" class="step-panel hidden">
+        <p><strong>Share this link with the next player.</strong> Copy the link and send it to them; when they open it, they take their turn.</p>
+        <div class="row" style="align-items: flex-start;">
+          <div class="link-box" style="flex: 1; margin: 0;"><a id="gameLink" href="">Link</a></div>
+          <button id="btnCopy">Copy to clipboard</button>
+        </div>
+        <div class="row" style="margin-top: 0.75rem;"><button id="btnEndTurn">End turn</button></div>
+      </div>
+    </div>
+    <div id="ranking" class="ranking hidden"></div>
+  </div>
+
+  <script>
+(function () {
+  'use strict';
+
+  var DEFAULT_POP = 100, DEFAULT_ACRES = 1000, DEFAULT_BUSHELS = 2800;
+  var PRICE_MIN = 17, PRICE_MAX = 26;
+
+  var PLAYER_NAMES = [
+    'Anu-nakam',
+    'Bilalama',
+    'Curuppag',
+    'Dumuzi'
+  ];
+
+  function getPlayerName(playerIdx) {
+    var prefix = 'Player ' + (playerIdx + 1);
+    return (PLAYER_NAMES[playerIdx] != null ? prefix + ' ' +PLAYER_NAMES[playerIdx] : prefix);
+  }
+  var tradeFormVisible = false;
+  var warFormVisible = false;
+  var lastRenderedStep = -1;
+  var BUSHELS_PER_PERSON = 20, ACRES_PER_PERSON = 10, BUSHELS_PER_ACRE_PLANT = 0.5;
+  var HARVEST_MIN = 1, HARVEST_MAX = 5;
+  var PLAGUE_CHANCE = 0.15;
+  var REFUGEE_SHARE = 0.3;
+  var ACRES_PER_DEFENDER_CASUALTY = 2;
+
+  function randInt(lo, hi) {
+    return Math.floor(rand(lo, hi + 1));
+  }
+  function rand(lo, hi) {
+    return lo + Math.random() * (hi - lo);
+  }
+
+  function defaultState(numPlayers) {
+    var n = Math.max(1, Math.min(4, numPlayers || 2));
+    var p = [], a = [], b = [], h = [], r = [], v = [], pr = [], sl = [];
+    var st = [], ri = [], ro = [];
+    for (var i = 0; i < n; i++) {
+      p.push(DEFAULT_POP);
+      a.push(DEFAULT_ACRES);
+      b.push(DEFAULT_BUSHELS);
+      h.push(0);
+      r.push(0);
+      v.push(0);
+      pr.push(0);
+      sl.push(0);
+      st.push(0);
+      ri.push(0);
+      ro.push(0);
+    }
+    return {
+      n: n,
+      y: 1,
+      c: 0,
+      p: p, a: a, b: b, h: h, r: r, v: v, pr: pr, sl: sl,
+      st: st, ri: ri, ro: ro,
+      trade: null,
+      curPrice: null,
+      step: 0,
+      fedBushels: null,
+      lastWar: null
+    };
+  }
+
+  function landPrice(state, playerIdx) {
+    var base = randInt(PRICE_MIN, PRICE_MAX);
+    var prev = (playerIdx + state.n - 1) % state.n;
+    var lastSold = state.sl[prev] || 0;
+    if (lastSold > 0) base = Math.max(PRICE_MIN, base - 2);
+    else if (lastSold < 0) base = Math.min(PRICE_MAX, base + 2);
+    return base;
+  }
+
+  function encode(state) {
+    var s = JSON.stringify(state);
+    return btoa(encodeURIComponent(s).replace(/%([0-9A-F]{2})/g, function(_, h) { return String.fromCharCode(parseInt(h, 16)); }));
+  }
+
+  function decode(str) {
+    try {
+      var s = decodeURIComponent(atob(str).split('').map(function(c) { return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2); }).join(''));
+      return JSON.parse(s);
+    } catch (e) { return null; }
+  }
+
+  function getStateFromUrl() {
+    var params = new URLSearchParams(window.location.search);
+    var g = params.get('g');
+    if (!g) return null;
+    var state = decode(g);
+    if (!state || !state.n || state.n < 1 || state.n > 4) return null;
+    if (state.n === 1) state.trade = null;
+    while (state.p.length < state.n) {
+      state.p.push(DEFAULT_POP);
+      state.a.push(DEFAULT_ACRES);
+      state.b.push(DEFAULT_BUSHELS);
+      state.h.push(0);
+      state.r.push(0);
+      state.v.push(0);
+      state.pr.push(0);
+      state.sl.push(0);
+    }
+    if (state.step == null) state.step = 0;
+    if (state.fedBushels == null) state.fedBushels = null;
+    return state;
+  }
+
+  function getShareUrl(state) {
+    return window.location.origin + window.location.pathname + '?g=' + encode(state);
+  }
+
+  function resolveWar(state, targetIdx, armySize) {
+    if (state.n < 2) return state;
+    var c = state.c;
+    if (targetIdx === c || targetIdx < 0 || targetIdx >= state.n) return state;
+    var attackerPop = state.p[c], defenderPop = state.p[targetIdx];
+    var defenderAcres = state.a[targetIdx];
+    if (armySize < 1 || armySize >= attackerPop || defenderPop < 1) return state;
+    state = JSON.parse(JSON.stringify(state));
+    var defenderForce = defenderPop;
+    var attackerDead = Math.max(0, Math.min(armySize, Math.floor(armySize * defenderForce / (armySize + defenderForce))));
+    var defenderDead = Math.max(0, Math.min(defenderPop, Math.floor(defenderForce * armySize / (armySize + defenderForce))));
+    state.p[c] = attackerPop - attackerDead;
+    state.p[targetIdx] = defenderPop - defenderDead;
+    var ratio = armySize / defenderPop;
+    var attackerWins = ratio >= 2
+      ? Math.random() < 0.95
+      : Math.random() < (ratio / 2);
+    var acresGained = 0;
+    if (attackerWins) {
+      acresGained = Math.min(defenderAcres, Math.floor(defenderDead * ACRES_PER_DEFENDER_CASUALTY));
+      state.a[c] = state.a[c] + acresGained;
+      state.a[targetIdx] = state.a[targetIdx] - acresGained;
+    }
+    state.lastWar = { from: c, to: targetIdx, attackerDead: attackerDead, defenderDead: defenderDead, acresGained: acresGained, attackerWins: attackerWins };
+    return state;
+  }
+
+  function applyTrade(state) {
+    if (state.n < 2) return state;
+    var t = state.trade;
+    if (!t || t.to !== state.c) return state;
+    var from = t.from, to = t.to;
+    if (from === to || from < 0 || from >= state.n || to < 0 || to >= state.n) return state;
+    var acres = t.a || 0, price = Math.max(0, t.b || 0);
+    if (acres === 0 || price <= 0) { state.trade = null; return state; }
+    if (acres > 0) {
+      var cost = acres * price;
+      if (state.b[from] < cost || state.a[to] < acres) { state.trade = null; return state; }
+      state.b[from] -= cost;
+      state.b[to] += cost;
+      state.a[from] += acres;
+      state.a[to] -= acres;
+    } else {
+      var sellAcres = -acres;
+      var pay = sellAcres * price;
+      if (state.a[from] < sellAcres || state.b[to] < pay) { state.trade = null; return state; }
+      state.a[from] -= sellAcres;
+      state.a[to] += sellAcres;
+      state.b[from] += pay;
+      state.b[to] -= pay;
+    }
+    state.trade = null;
+    return state;
+  }
+
+  function doLandStep(state, acresDelta) {
+    var c = state.c;
+    var acres = state.a[c], bushels = state.b[c];
+    state.sl[c] = acresDelta;
+    var price = state.curPrice != null ? state.curPrice : landPrice(state, c);
+    state.pr[c] = price;
+    state.curPrice = price;
+    state.a[c] = acres + acresDelta;
+    state.b[c] = bushels - (acresDelta > 0 ? acresDelta * price : 0) + (acresDelta < 0 ? (-acresDelta) * price : 0);
+    state.step = 1;
+    return state;
+  }
+
+  function doFeedStep(state, feedBushels) {
+    var c = state.c;
+    state.b[c] -= feedBushels;
+    state.fedBushels = feedBushels;
+    state.step = 2;
+    return state;
+  }
+
+  function advanceTurn(state) {
+    state.curPrice = null;
+    state.fedBushels = null;
+    state.lastWar = null;
+    state.step = 0;
+    state.c = (state.c + 1) % state.n;
+    if (state.c === 0) state.y++;
+    return state;
+  }
+
+  function doPlantStepResolution(state, plantBushels) {
+    var c = state.c;
+    var pop = state.p[c], acres = state.a[c], bushels = state.b[c];
+    var feedBushels = state.fedBushels || 0;
+    var fed = Math.floor(feedBushels / BUSHELS_PER_PERSON);
+    var starved = Math.max(0, pop - fed);
+
+    var harvest = 0;
+    if (plantBushels >= 0 && plantBushels <= bushels) {
+      var maxAcresPlant = Math.min(acres, pop * ACRES_PER_PERSON, Math.floor(plantBushels / BUSHELS_PER_ACRE_PLANT));
+      var plantAcres = Math.min(maxAcresPlant, Math.floor(plantBushels / BUSHELS_PER_ACRE_PLANT));
+      bushels -= plantAcres * BUSHELS_PER_ACRE_PLANT;
+      harvest = plantAcres * randInt(HARVEST_MIN, HARVEST_MAX);
+    }
+    bushels += harvest;
+    state.h[c] = harvest;
+
+    var rats = Math.floor(bushels * rand(0.01, 0.05));
+    state.r[c] = rats;
+    bushels -= rats;
+
+    if (Math.random() < PLAGUE_CHANCE) {
+      pop = Math.floor(pop / 2);
+      state.v[c] = 1;
+    } else state.v[c] = 0;
+
+    pop = Math.max(0, fed);
+    var refugeesIn = 0;
+    if (state.v[c] === 0 && harvest > 0) refugeesIn = randInt(0, 5);
+    pop += refugeesIn;
+    var refugeesOut = 0;
+    if (starved > 0 && state.n > 1) {
+      refugeesOut = Math.min(starved, Math.floor(starved * REFUGEE_SHARE));
+      var other = (c + 1) % state.n;
+      state.p[other] += refugeesOut;
+    }
+    state.p[c] = pop;
+    state.a[c] = acres;
+    state.b[c] = bushels;
+
+    state.st = state.st || [];
+    state.ri = state.ri || [];
+    state.ro = state.ro || [];
+    state.st[c] = starved;
+    state.ri[c] = refugeesIn;
+    state.ro[c] = refugeesOut;
+
+    state.curPrice = null;
+    state.fedBushels = null;
+    state.step = 3;
+    return state;
+  }
+
+  function doPlantStep(state, plantBushels) {
+    state = doPlantStepResolution(state, plantBushels);
+    return advanceTurn(state);
+  }
+
+  function validateLand(state, acresDelta) {
+    var c = state.c;
+    var acres = state.a[c], bushels = state.b[c];
+    var price = state.curPrice != null ? state.curPrice : (state.pr[c] || landPrice(state, c));
+    var err = [];
+    if (acresDelta > 0 && acresDelta * price > bushels) err.push('Not enough bushels to buy ' + acresDelta + ' acres (need ' + (acresDelta * price) + ').');
+    if (acresDelta < 0 && -acresDelta > acres) err.push('You cannot sell more acres than you have.');
+    return err;
+  }
+
+  function validateFeed(state, feedBushels) {
+    var c = state.c;
+    var bushels = state.b[c];
+    var err = [];
+    if (feedBushels < 0 || feedBushels > bushels) err.push('Feed must be between 0 and your bushels (' + bushels + ').');
+    return err;
+  }
+
+  function validatePlant(state, plantBushels) {
+    var c = state.c;
+    var pop = state.p[c], acres = state.a[c], bushels = state.b[c];
+    var maxPlantAcres = Math.min(acres, pop * ACRES_PER_PERSON);
+    var maxPlantBushels = maxPlantAcres * BUSHELS_PER_ACRE_PLANT;
+    var err = [];
+    if (plantBushels < 0 || plantBushels > bushels) err.push('Plant bushels must be 0 to ' + bushels + '.');
+    if (plantBushels > maxPlantBushels) err.push('You can only plant enough for ' + maxPlantAcres + ' acres (max 10 per person, ' + maxPlantBushels + ' bushels).');
+    return err;
+  }
+
+  function helpersLand(state) {
+    var c = state.c;
+    var pop = state.p[c], acres = state.a[c], bushels = state.b[c];
+    var price = state.curPrice != null ? state.curPrice : (state.pr[c] || landPrice(state, c));
+    var maxBuy = Math.floor(bushels / price);
+    return { pop: pop, acres: acres, bushels: bushels, price: price, maxBuy: maxBuy, maxSell: acres };
+  }
+
+  function helpersFeed(state) {
+    var c = state.c;
+    var pop = state.p[c], acres = state.a[c], bushels = state.b[c];
+    var needFeed = pop * BUSHELS_PER_PERSON;
+    return { pop: pop, acres: acres, bushels: bushels, needFeed: needFeed };
+  }
+
+  function helpersPlant(state) {
+    var c = state.c;
+    var pop = state.p[c], acres = state.a[c], bushels = state.b[c];
+    var maxPlantAcres = Math.min(acres, pop * ACRES_PER_PERSON);
+    var maxPlantBushels = maxPlantAcres * BUSHELS_PER_ACRE_PLANT;
+    return { pop: pop, acres: acres, bushels: bushels, maxPlantAcres: maxPlantAcres, maxPlantBushels: maxPlantBushels };
+  }
+
+  function render(state) {
+    var gameEl = document.getElementById('game');
+    var setupEl = document.getElementById('setup');
+    var curPlayerEl = document.getElementById('curPlayer');
+    var curYearEl = document.getElementById('curYear');
+    var reportEl = document.getElementById('report');
+    var tradeOfferEl = document.getElementById('tradeOffer');
+    var rankingEl = document.getElementById('ranking');
+    var inputsEl = document.getElementById('inputs');
+
+    if (state.y > 10) {
+      gameEl.classList.remove('hidden');
+      setupEl.classList.add('hidden');
+      inputsEl.classList.add('hidden');
+      curYearEl.textContent = '10';
+      if (state.n === 1) {
+        curPlayerEl.textContent = getPlayerName(0);
+        rankingEl.innerHTML = '<h2>Game over</h2><p>You finished with <strong>' + state.p[0] + '</strong> people, <strong>' + state.a[0] + '</strong> acres, and <strong>' + state.b[0] + '</strong> bushels.</p>';
+      } else {
+        curPlayerEl.textContent = '—';
+        var order = state.p.map(function(_, i) { return i; });
+        order.sort(function(i, j) { return state.p[j] - state.p[i]; });
+        var html = '<h2>Game over — Final ranking (by population)</h2><ol>';
+        order.forEach(function(idx) {
+          html += '<li>' + getPlayerName(idx) + ': ' + state.p[idx] + ' people, ' + state.a[idx] + ' acres, ' + state.b[idx] + ' bushels</li>';
+        });
+        html += '</ol>';
+        rankingEl.innerHTML = html;
+      }
+      rankingEl.classList.remove('hidden');
+      return;
+    }
+
+    var c = state.c;
+    gameEl.classList.remove('hidden');
+    setupEl.classList.add('hidden');
+    curPlayerEl.textContent = getPlayerName(c);
+    curYearEl.textContent = state.y;
+
+    var pop = state.p[c], acres = state.a[c], bushels = state.b[c];
+    var lastH = state.h[c], lastR = state.r[c], lastV = state.v[c], lastPr = state.pr[c];
+    if (state.curPrice == null) {
+      state.curPrice = landPrice(state, c);
+    }
+    var price = state.curPrice;
+
+    var reportText = '';
+    reportText += 'Population: <strong>' + pop + '</strong><br/>';
+    reportText += 'Acres: <strong>' + acres + '</strong><br/>';
+    reportText += 'Bushels: <strong>' + bushels + '</strong><br/>';
+    if (state.y > 1) {
+      reportText += 'Last harvest: <strong>' + lastH + '</strong> bushels<br/>';
+      reportText += 'Rats ate: <strong>' + lastR + '</strong> bushels<br/>';
+      reportText += lastV ? '<strong>A plague struck!</strong><br/>' : '';
+    }
+    if (state.y > 1 || state.step === 3) {
+      var lastSt = (state.st && state.st[c]) !== undefined ? state.st[c] : 0;
+      var lastRi = (state.ri && state.ri[c]) !== undefined ? state.ri[c] : 0;
+      var lastRo = (state.ro && state.ro[c]) !== undefined ? state.ro[c] : 0;
+      reportText += 'People starved: <strong>' + lastSt + '</strong><br/>';
+      reportText += 'Refugees arrived: <strong>' + lastRi + '</strong><br/>';
+      reportText += 'Refugees fled: <strong>' + lastRo + '</strong><br/>';
+    }
+    if (state.lastWar && state.step === 0) {
+      var lw = state.lastWar;
+      if (lw.from === c) {
+        reportText += '<br/>Last war (you attacked): your losses <strong>' + lw.attackerDead + '</strong>, their losses <strong>' + lw.defenderDead + '</strong>. ' + (lw.attackerWins ? 'You <strong>won</strong> and gained <strong>' + lw.acresGained + '</strong> acres.' : 'You <strong>lost</strong> (no land gained).') + '<br/>';
+      } else if (lw.to === c) {
+        reportText += '<br/>Last war (you were attacked): your losses <strong>' + lw.defenderDead + '</strong>, their losses <strong>' + lw.attackerDead + '</strong>. ' + (lw.attackerWins ? 'They <strong>won</strong>; you lost <strong>' + lw.acresGained + '</strong> acres.' : 'You <strong>held</strong> (no land lost).') + '<br/>';
+      }
+    }
+    reportEl.innerHTML = reportText;
+
+    tradeOfferEl.classList.add('hidden');
+    if (state.n > 1 && state.trade && state.trade.to === c) {
+      var t = state.trade;
+      var a = t.a || 0, p = t.b || 0;
+      var msg = a > 0
+        ? getPlayerName(t.from) + ' offers to <strong>buy</strong> ' + a + ' acres from you at ' + p + ' bushels/acre (you receive <strong>' + (a * p) + '</strong> bushels).'
+        : (a < 0 ? getPlayerName(t.from) + ' offers to <strong>sell</strong> ' + (-a) + ' acres to you at ' + p + ' bushels/acre (you pay <strong>' + ((-a) * p) + '</strong> bushels).' : 'Invalid offer.');
+      tradeOfferEl.innerHTML = 'Pending: ' + msg + ' <button id="btnAccept">Accept</button> <button id="btnDecline">Decline</button>';
+      tradeOfferEl.classList.remove('hidden');
+      document.getElementById('btnAccept').onclick = function() {
+        state = applyTrade(JSON.parse(JSON.stringify(state)));
+        render(state);
+      };
+      document.getElementById('btnDecline').onclick = function() {
+        state.trade = null;
+        render(state);
+      };
+    }
+
+    rankingEl.classList.add('hidden');
+    inputsEl.classList.remove('hidden');
+
+    var step = state.step || 0;
+    if (step === 0 && lastRenderedStep !== 0) { tradeFormVisible = false; warFormVisible = false; }
+    lastRenderedStep = step;
+
+    var stepLandEl = document.getElementById('stepLand');
+    var stepFeedEl = document.getElementById('stepFeed');
+    var stepPlantEl = document.getElementById('stepPlant');
+    var stepShareEl = document.getElementById('stepShare');
+    stepLandEl.classList.toggle('hidden', step !== 0);
+    stepFeedEl.classList.toggle('hidden', step !== 1);
+    stepPlantEl.classList.toggle('hidden', step !== 2);
+    stepShareEl.classList.toggle('hidden', step !== 3);
+
+    if (step === 3) {
+      var nextState = advanceTurn(JSON.parse(JSON.stringify(state)));
+      var shareUrl = getShareUrl(nextState);
+      var gameLinkEl = document.getElementById('gameLink');
+      gameLinkEl.href = shareUrl;
+      gameLinkEl.textContent = shareUrl;
+      document.getElementById('btnCopy').textContent = 'Copy to clipboard';
+    }
+
+    var showTrade = state.n > 1 && step === 0;
+    document.getElementById('btnPropose').style.display = showTrade ? '' : 'none';
+    var tradeProposeRowEl = document.getElementById('tradeProposeRow');
+    var showTradeForm = showTrade && tradeFormVisible;
+    tradeProposeRowEl.classList.toggle('hidden', !showTradeForm);
+    document.getElementById('btnTradeCancel').classList.toggle('hidden', !showTradeForm);
+    document.getElementById('btnTradeCancel').style.display = showTrade ? '' : 'none';
+
+    var showWar = state.n > 1 && step === 0;
+    document.getElementById('btnWar').style.display = showWar ? '' : 'none';
+    var warRowEl = document.getElementById('warRow');
+    var showWarForm = showWar && warFormVisible;
+    warRowEl.classList.toggle('hidden', !showWarForm);
+    document.getElementById('btnWarCancel').style.display = showWar ? '' : 'none';
+    if (showWar) {
+      var warTargetEl = document.getElementById('warTarget');
+      warTargetEl.innerHTML = '';
+      for (var i = 0; i < state.n; i++) {
+        if (i === state.c) continue;
+        var wopt = document.createElement('option');
+        wopt.value = i;
+        wopt.textContent = getPlayerName(i);
+        warTargetEl.appendChild(wopt);
+      }
+      var maxArmy = Math.max(0, state.p[state.c] - 1);
+      document.getElementById('warArmy').max = maxArmy;
+      if (!warFormVisible) {
+        document.getElementById('warArmy').value = maxArmy < 1 ? 0 : Math.max(1, Math.min(10, maxArmy));
+        document.getElementById('errWar').textContent = '';
+      }
+    }
+    if (showTrade) {
+      var tradeTargetEl = document.getElementById('tradeTarget');
+      tradeTargetEl.innerHTML = '';
+      for (var i = 0; i < state.n; i++) {
+        if (i === state.c) continue;
+        var opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = getPlayerName(i);
+        tradeTargetEl.appendChild(opt);
+      }
+      if (!tradeFormVisible) {
+        document.getElementById('tradeBushels').value = 0;
+        document.getElementById('tradeAcres').value = 0;
+      }
+    }
+
+    if (step === 0) {
+      var hLand = helpersLand(state);
+      document.getElementById('helperLand').innerHTML = 'Land price: <strong>' + hLand.price + '</strong> bushels/acre. You can buy up to <strong>' + hLand.maxBuy + '</strong> acres or sell up to <strong>' + hLand.maxSell + '</strong> acres.';
+      document.getElementById('acres').value = 0;
+      document.getElementById('err').textContent = '';
+    } else if (step === 1) {
+      var hFeed = helpersFeed(state);
+      document.getElementById('helperFeed').innerHTML = 'To feed everyone you need <strong>' + hFeed.needFeed + '</strong> bushels (20 per person).';
+      document.getElementById('feed').value = Math.max(0, Math.min(hFeed.needFeed, hFeed.bushels));
+      document.getElementById('errFeed').textContent = '';
+    } else {
+      var hPlant = helpersPlant(state);
+      document.getElementById('helperPlant').innerHTML = 'Max plantable: <strong>' + hPlant.maxPlantAcres + '</strong> acres (<strong>' + hPlant.maxPlantBushels + '</strong> bushels, ½ per acre, max 10 acres/person).';
+      document.getElementById('plant').value = Math.min(hPlant.bushels, hPlant.maxPlantBushels);
+      document.getElementById('errPlant').textContent = '';
+    }
+  }
+
+  function onStepLand() {
+    var state = getStateFromUrl() || defaultState(parseInt(document.getElementById('numPlayers').value, 10));
+    if (state.y > 10 || (state.step || 0) !== 0) return;
+    if (state.n > 1 && state.trade && state.trade.to === state.c) {
+      document.getElementById('err').textContent = 'Resolve the pending trade (Accept or Decline) first.';
+      return;
+    }
+    var acresDelta = parseInt(document.getElementById('acres').value, 10) || 0;
+    var errs = validateLand(state, acresDelta);
+    if (errs.length > 0) {
+      document.getElementById('err').textContent = errs.join(' ');
+      return;
+    }
+    state = JSON.parse(JSON.stringify(state));
+    state = doLandStep(state, acresDelta);
+    history.replaceState(null, '', window.location.pathname + '?g=' + encode(state));
+    render(state);
+  }
+
+  function onStepFeed() {
+    var state = getStateFromUrl() || defaultState(parseInt(document.getElementById('numPlayers').value, 10));
+    if (state.y > 10 || (state.step || 0) !== 1) return;
+    var feedBushels = parseInt(document.getElementById('feed').value, 10) || 0;
+    var errs = validateFeed(state, feedBushels);
+    if (errs.length > 0) {
+      document.getElementById('errFeed').textContent = errs.join(' ');
+      return;
+    }
+    state = JSON.parse(JSON.stringify(state));
+    state = doFeedStep(state, feedBushels);
+    history.replaceState(null, '', window.location.pathname + '?g=' + encode(state));
+    render(state);
+  }
+
+  function onStepPlant() {
+    var state = getStateFromUrl() || defaultState(parseInt(document.getElementById('numPlayers').value, 10));
+    if (state.y > 10 || (state.step || 0) !== 2) return;
+    var plantBushels = parseInt(document.getElementById('plant').value, 10) || 0;
+    var errs = validatePlant(state, plantBushels);
+    if (errs.length > 0) {
+      document.getElementById('errPlant').textContent = errs.join(' ');
+      return;
+    }
+    state = JSON.parse(JSON.stringify(state));
+    state = doPlantStepResolution(state, plantBushels);
+    history.replaceState(null, '', window.location.pathname + '?g=' + encode(state));
+    render(state);
+  }
+
+  function onEndTurn() {
+    var state = getStateFromUrl();
+    if (!state || state.y > 10 || (state.step || 0) !== 3) return;
+    state = JSON.parse(JSON.stringify(state));
+    state = advanceTurn(state);
+    history.replaceState(null, '', window.location.pathname + '?g=' + encode(state));
+    render(state);
+  }
+
+  function copyLink() {
+    var url = document.getElementById('gameLink').href;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function() { document.getElementById('btnCopy').textContent = 'Copied!'; });
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = url;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      document.getElementById('btnCopy').textContent = 'Copied!';
+    }
+  }
+
+  function declareWar() {
+    var state = getStateFromUrl();
+    if (!state || state.y > 10 || state.n < 2 || (state.step || 0) !== 0) return;
+    var c = state.c;
+    if (state.trade && state.trade.to === c) {
+      document.getElementById('errWar').textContent = 'Resolve the pending trade first.';
+      return;
+    }
+    var targetIdx = parseInt(document.getElementById('warTarget').value, 10);
+    var armySize = parseInt(document.getElementById('warArmy').value, 10) || 0;
+    if (targetIdx === c || targetIdx < 0 || targetIdx >= state.n) {
+      document.getElementById('errWar').textContent = 'Invalid target.';
+      return;
+    }
+    var maxArmy = state.p[c] - 1;
+    if (armySize < 1 || armySize > maxArmy) {
+      document.getElementById('errWar').textContent = 'Army must be 1 to ' + maxArmy + ' (leave at least 1 person).';
+      return;
+    }
+    if (state.p[targetIdx] < 1) {
+      document.getElementById('errWar').textContent = getPlayerName(targetIdx) + ' has no people to fight.';
+      return;
+    }
+    state = resolveWar(state, targetIdx, armySize);
+    history.replaceState(null, '', window.location.pathname + '?g=' + encode(state));
+    warFormVisible = false;
+    document.getElementById('errWar').textContent = '';
+    render(state);
+  }
+
+  function proposeTrade() {
+    var state = getStateFromUrl();
+    if (!state || state.y > 10 || state.n < 2) return;
+    var c = state.c;
+    var to = parseInt(document.getElementById('tradeTarget').value, 10);
+    if (to === c || to < 0 || to >= state.n) {
+      document.getElementById('err').textContent = 'Invalid player.';
+      return;
+    }
+    var price = parseInt(document.getElementById('tradeBushels').value, 10) || 0;
+    var acres = parseInt(document.getElementById('tradeAcres').value, 10) || 0;
+    if (acres === 0) {
+      document.getElementById('err').textContent = 'Enter acres: positive to buy from them, negative to sell to them.';
+      return;
+    }
+    if (price <= 0) {
+      document.getElementById('err').textContent = 'Price (bushels per acre) must be positive.';
+      return;
+    }
+    if (acres > 0) {
+      var cost = acres * price;
+      if (state.b[c] < cost) {
+        document.getElementById('err').textContent = 'You need ' + cost + ' bushels to buy ' + acres + ' acres at ' + price + '/acre. You have ' + state.b[c] + '.';
+        return;
+      }
+      if (state.a[to] < acres) {
+        document.getElementById('err').textContent = getPlayerName(to) + ' only has ' + state.a[to] + ' acres.';
+        return;
+      }
+    } else {
+      var sellAcres = -acres;
+      if (state.a[c] < sellAcres) {
+        document.getElementById('err').textContent = 'You only have ' + state.a[c] + ' acres to sell.';
+        return;
+      }
+      var pay = sellAcres * price;
+      if (state.b[to] < pay) {
+        document.getElementById('err').textContent = getPlayerName(to) + ' only has ' + state.b[to] + ' bushels (need ' + pay + ' for ' + sellAcres + ' acres at ' + price + '/acre).';
+        return;
+      }
+    }
+    state = JSON.parse(JSON.stringify(state));
+    state.trade = { from: c, to: to, b: price, a: acres };
+    history.replaceState(null, '', window.location.pathname + '?g=' + encode(state));
+    render(state);
+    document.getElementById('err').textContent = 'Offer sent. Next player will see it on their turn.';
+  }
+
+  document.getElementById('btnNew').onclick = function() {
+    var n = parseInt(document.getElementById('numPlayers').value, 10);
+    var state = defaultState(n);
+    state.curPrice = null;
+    document.getElementById('game').classList.remove('hidden');
+    document.getElementById('setup').classList.add('hidden');
+    history.replaceState(null, '', window.location.pathname + '?g=' + encode(state));
+    render(state);
+  };
+
+  document.getElementById('btnStepLand').onclick = onStepLand;
+  document.getElementById('btnStepFeed').onclick = onStepFeed;
+  document.getElementById('btnStepPlant').onclick = onStepPlant;
+  document.getElementById('btnEndTurn').onclick = onEndTurn;
+  document.getElementById('btnCopy').onclick = copyLink;
+  document.getElementById('btnPropose').onclick = function() {
+    if (tradeFormVisible) {
+      proposeTrade();
+    } else {
+      tradeFormVisible = true;
+      var s = getStateFromUrl();
+      if (s) render(s);
+    }
+  };
+  document.getElementById('btnTradeCancel').onclick = function() {
+    tradeFormVisible = false;
+    var s = getStateFromUrl();
+    if (s) render(s);
+  };
+  document.getElementById('btnWar').onclick = function() {
+    if (warFormVisible) {
+      declareWar();
+    } else {
+      warFormVisible = true;
+      var s = getStateFromUrl();
+      if (s) render(s);
+    }
+  };
+  document.getElementById('btnWarCancel').onclick = function() {
+    warFormVisible = false;
+    document.getElementById('errWar').textContent = '';
+    var s = getStateFromUrl();
+    if (s) render(s);
+  };
+  document.getElementById('btnDeclareWar').onclick = declareWar;
+
+  var initialState = getStateFromUrl();
+  if (initialState) {
+    document.getElementById('numPlayers').value = initialState.n;
+    document.getElementById('game').classList.remove('hidden');
+    document.getElementById('setup').classList.add('hidden');
+    render(initialState);
+  }
+})();
+  </script>
+</body>
+</html>
