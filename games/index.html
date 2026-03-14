@@ -1,1 +1,88 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Games Index</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+        
+        .games-list {
+            display: grid;
+            gap: 15px;
+        }
+        
+        .game-item {
+            display: block;
+            padding: 15px 20px;
+            background: #f5f5f5;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #667eea;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .game-item:hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+            transform: translateX(5px);
+        }
+        
+        .empty-state {
+            text-align: center;
+            color: #999;
+            padding: 40px 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Games</h1>
+        <div class="games-list">
+            <!-- Add your game links here -->
+            <!-- Example:
+            <a href="./game-name/index.html" class="game-item">Game Name</a>
+            -->
+            <a href="./game-name/hamurabi.html" class="game-item">Hamurabi</a>
+            <a href="./game-name/hamurabi_20260314-2.html" class="game-item">Hamurabi 20260314-2</a>
+            <!-- <div class="empty-state">
+                <p>No games available yet. Add your games here!</p>
+            </div> -->
+        </div>
+    </div>
+</body>
+</html>
