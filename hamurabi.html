@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HAMURABI — Kingdom of Sumeria</title>
+  <script src="https://cdn.jsdelivr.net/npm/seedrandom@3.0.5/seedrandom.min.js"></script>
+  <style>
+    :root {
+      --bg: #0a0a0c;
+      --paper: #1a1a1e;
+      --ink: #c4a35a;
+      --ink-dim: #8b7355;
+      --accent: #7cb342;
+      --danger: #c62828;
+      --font-mono: "Courier New", "Liberation Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font-mono);
+      font-size: 14px;
+      line-height: 1.5;
+      padding: 1rem;
+    }
+    .wrap {
+      max-width: 42rem;
+      margin: 0 auto;
+      background: var(--paper);
+      border: 1px solid var(--ink-dim);
+      padding: 1.5rem 2rem;
+      box-shadow: 0 0 0 1px rgba(196,163,90,0.1);
+    }
+    h1 {
+      text-align: center;
+      font-size: 1.4rem;
+      letter-spacing: 0.2em;
+      margin: 0 0 0.25rem;
+      color: var(--accent);
+    }
+    .subtitle {
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--ink-dim);
+      margin-bottom: 1.5rem;
+    }
+    .report {
+      white-space: pre-wrap;
+      margin: 1rem 0;
+      padding: 1rem;
+      background: rgba(0,0,0,0.3);
+      border-left: 3px solid var(--ink-dim);
+    }
+    .report strong { color: var(--accent); }
+    .input-row {
+      margin: 0.75rem 0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .input-row label { min-width: 12rem; }
+    input[type="number"] {
+      width: 6rem;
+      padding: 0.35rem 0.5rem;
+      background: var(--bg);
+      border: 1px solid var(--ink-dim);
+      color: var(--ink);
+      font-family: var(--font-mono);
+      font-size: 1rem;
+    }
+    button {
+      padding: 0.5rem 1rem;
+      background: var(--ink-dim);
+      border: 1px solid var(--ink);
+      color: var(--ink);
+      font-family: var(--font-mono);
+      cursor: pointer;
+      margin-right: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    button:hover { background: var(--ink); color: var(--bg); }
+    button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+    .error { color: var(--danger); margin: 0.5rem 0; }
+    .section { margin: 1.25rem 0; }
+    .section h2 { font-size: 0.9rem; color: var(--ink-dim); margin: 0 0 0.5rem; }
+    #intro { margin-bottom: 1.5rem; }
+    #intro p { margin: 0.5rem 0; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>HAMURABI</h1>
+    <p class="subtitle">CREATIVE COMPUTING · MORRISTOWN, NEW JERSEY</p>
+
+    <div id="intro">
+      <p>Try your hand at governing ancient Sumeria for a ten-year term of office.</p>
+      <p>You must manage <strong>people</strong>, <strong>acres of land</strong>, and <strong>bushels of grain</strong>. Each person needs 20 bushels per year to survive. It takes ½ bushel to plant one acre; each person can work up to 10 acres. Land is traded in bushels; the price changes each year. Beware rats, plagues, and starvation—if more than 45% starve in one year, you are impeached.</p>
+      <button id="btnStart" class="primary">Begin your reign</button>
+    </div>
+
+    <div id="game" class="hidden">
+      <div id="report" class="report"></div>
+      <div id="prompts"></div>
+      <div id="message" class="error hidden"></div>
+    </div>
+
+    <div id="about" class="hidden section">
+      <h2>About this game</h2>
+      <p>Hamurabi started in 1968 as &ldquo;The Sumer Game&rdquo; (Doug Dyment, FOCAL on PDP-8). David H. Ahl ported it to BASIC and published it in <em>101 BASIC Computer Games</em> (1973) and <em>BASIC Computer Games</em> (1978). It became a classic on 8-bit micros including the Atari. This version follows the 1978 BASIC rules.</p>
+    </div>
+  </div>
+
+  <script>
+(function () {
+  'use strict';
+
+  var rng = typeof seedrandom !== 'undefined' ? seedrandom : Math.random;
+
+  var state = {
+    year: 0,
+    population: 100,
+    acres: 1000,
+    stored: 2800,
+    lastYield: 3,
+    lastRats: 200,
+    lastDied: 0,
+    lastIncrease: 5,
+    plagueNext: false,
+    plagueJustHit: false,
+    diedTotal: 0,
+    diedAvg: 0,
+    phase: 'report'
+  };
+
+  var el = {
+    intro: document.getElementById('intro'),
+    game: document.getElementById('game'),
+    report: document.getElementById('report'),
+    prompts: document.getElementById('prompts'),
+    message: document.getElementById('message'),
+    about: document.getElementById('about')
+  };
+
+  function randInt(min, max) {
+    return Math.floor(rng() * (max - min + 1)) + min;
+  }
+
+  function showMessage(msg, isError) {
+    el.message.textContent = msg || '';
+    el.message.classList.toggle('hidden', !msg);
+    el.message.classList.toggle('error', isError !== false);
+  }
+
+  function renderReport() {
+    state.year += 1;
+    if (state.plagueNext) {
+      state.plagueJustHit = true;
+      state.population = Math.floor(state.population / 2);
+      state.plagueNext = false;
+    } else {
+      state.plagueJustHit = false;
+    }
+    var popNow = state.population;
+    var s = 'Hamurabi: I beg to report to you,\n';
+    s += 'in year ' + state.year + ', ' + state.lastDied + ' people starved, ' + state.lastIncrease + ' came to the city,\n';
+    if (state.plagueJustHit) {
+      s += 'A horrible plague struck! Half the people died.\n';
+    }
+    s += 'Population is now ' + popNow + '.\n';
+    s += 'The city now owns ' + state.acres + ' acres.\n';
+    s += 'You harvested ' + state.lastYield + ' bushels per acre.\n';
+    s += 'The rats ate ' + state.lastRats + ' bushels.\n';
+    s += 'You now have ' + state.stored + ' bushels in store.\n';
+    el.report.innerHTML = s.replace(/\n/g, '<br>');
+  }
+
+  function checkGameOver() {
+    if (state.year >= 11) {
+      endGame();
+      return true;
+    }
+    return false;
+  }
+
+  function endGame() {
+    var L = (state.population > 0) ? (state.acres / state.population) : 0;
+    var msg = 'In your 10-year term of office, ' + state.diedAvg.toFixed(1) + ' percent of the population starved per year on the average, i.e. a total of ' + state.diedTotal + ' people died!!\n';
+    msg += 'You started with 10 acres per person and ended with ' + L.toFixed(1) + ' acres per person.\n\n';
+    if (state.diedAvg > 33 || L < 7) {
+      msg += 'Due to this extreme mismanagement you have not only been impeached and thrown out of office but you have also been declared national fink!!!!';
+    } else if (state.diedAvg > 10 || L < 9) {
+      msg += 'Your heavy-handed performance smacks of Nero and Ivan IV. The people (remaining) find you an unpleasant ruler, and, frankly, hate your guts!!';
+    } else if (state.diedAvg > 3 || L < 10) {
+      msg += "Your performance could have been somewhat better, but really wasn't too bad at all. " + Math.floor(state.population * 0.8 * rng()) + ' people would dearly like to see you assassinated but we all have our trivial problems.';
+    } else {
+      msg += 'A fantastic performance!!! Charlemagne, Disraeli, and Jefferson combined could not have done better!';
+    }
+    msg += '\n\n****************\nSo long for now.';
+    el.report.innerHTML = msg.replace(/\n/g, '<br>');
+    el.prompts.innerHTML = '<button onclick="location.reload()">Play again</button>';
+    el.about.classList.remove('hidden');
+  }
+
+  function askLandBuy() {
+    var price = randInt(17, 26);
+    state.landPrice = price;
+    el.prompts.innerHTML =
+      '<div class="section">' +
+      '<h2>Land is trading at ' + price + ' bushels per acre.</h2>' +
+      '<div class="input-row"><label>How many acres do you wish to buy?</label><input type="number" id="inBuy" min="0" value="0"></div>' +
+      '<button id="btnBuy">Buy land</button>' +
+      '<button id="btnSell">Sell land instead</button>' +
+      '</div>';
+    document.getElementById('inBuy').focus();
+    document.getElementById('btnBuy').onclick = function () {
+      var q = parseInt(document.getElementById('inBuy').value, 10);
+      if (isNaN(q) || q < 0) {
+        showMessage('Hamurabi: I cannot do what you wish. Get yourself another steward!!!!!');
+        return;
+      }
+      if (q === 0) {
+        askSell();
+        return;
+      }
+      if (price * q > state.stored) {
+        showMessage('Hamurabi: Think again. You have only ' + state.stored + ' bushels of grain. Now then,');
+        return;
+      }
+      showMessage('');
+      state.acres += q;
+      state.stored -= price * q;
+      askFeed();
+    };
+    document.getElementById('btnSell').onclick = function () {
+      if (state.acres <= 0) {
+        showMessage('You have no land to sell.');
+        return;
+      }
+      askLandSell();
+    };
+  }
+
+  function askLandSell() {
+    el.prompts.innerHTML =
+      '<div class="section">' +
+      '<h2>How many acres do you wish to sell?</h2>' +
+      '<div class="input-row"><label>Acres to sell (price ' + state.landPrice + ' bushels/acre)</label><input type="number" id="inSell" min="0" max="' + state.acres + '" value="0"></div>' +
+      '<button id="btnSellOk">Sell</button>' +
+      '</div>';
+    document.getElementById('inSell').focus();
+    document.getElementById('btnSellOk').onclick = function () {
+      var q = parseInt(document.getElementById('inSell').value, 10);
+      if (isNaN(q) || q < 0 || q > state.acres) {
+        showMessage('Hamurabi: Think again. You own only ' + state.acres + ' acres. Now then,');
+        return;
+      }
+      showMessage('');
+      state.acres -= q;
+      state.stored += state.landPrice * q;
+      askFeed();
+    };
+  }
+
+  function askSell() {
+    if (state.acres <= 0) {
+      askFeed();
+      return;
+    }
+    askLandSell();
+  }
+
+  function askFeed() {
+    el.prompts.innerHTML =
+      '<div class="section">' +
+      '<h2>How many bushels do you wish to feed your people?</h2>' +
+      '<div class="input-row"><label>Bushels to feed (need ' + (state.population * 20) + ' to feed all)</label><input type="number" id="inFood" min="0" max="' + state.stored + '" value="' + Math.min(state.stored, state.population * 20) + '"></div>' +
+      '<button id="btnFeed">Feed people</button>' +
+      '</div>';
+    document.getElementById('inFood').focus();
+    document.getElementById('btnFeed').onclick = function () {
+      var food = parseInt(document.getElementById('inFood').value, 10);
+      if (isNaN(food) || food < 0) {
+        showMessage('Hamurabi: I cannot do what you wish.');
+        return;
+      }
+      if (food > state.stored) {
+        showMessage('Hamurabi: Think again. You have only ' + state.stored + ' bushels of grain. Now then,');
+        return;
+      }
+      showMessage('');
+      state.stored -= food;
+      state.foodGiven = food;
+      askPlant();
+    };
+  }
+
+  function askPlant() {
+    var maxByPeople = state.population * 10;
+    var maxByGrain = Math.floor(state.stored * 2);
+    var maxAcres = Math.min(state.acres, maxByPeople, maxByGrain);
+    el.prompts.innerHTML =
+      '<div class="section">' +
+      '<h2>How many acres do you wish to plant with seed?</h2>' +
+      '<p>You have ' + state.acres + ' acres, ' + state.population + ' people (max ' + (state.population * 10) + ' acres), and ' + state.stored + ' bushels (2 bushels plant 1 acre).</p>' +
+      '<div class="input-row"><label>Acres to plant</label><input type="number" id="inPlant" min="0" max="' + state.acres + '" value="' + Math.min(state.acres, maxAcres) + '"></div>' +
+      '<button id="btnPlant">Plant</button>' +
+      '</div>';
+    document.getElementById('inPlant').focus();
+    document.getElementById('btnPlant').onclick = function () {
+      var d = parseInt(document.getElementById('inPlant').value, 10);
+      if (isNaN(d) || d < 0) {
+        showMessage('Hamurabi: I cannot do what you wish.');
+        return;
+      }
+      if (d > state.acres) {
+        showMessage('Hamurabi: Think again. You own only ' + state.acres + ' acres. Now then,');
+        return;
+      }
+      var seedNeed = Math.floor(d / 2);
+      if (seedNeed > state.stored) {
+        showMessage('Hamurabi: Think again. You have only ' + state.stored + ' bushels of grain. Now then,');
+        return;
+      }
+      if (d > state.population * 10) {
+        showMessage('But you have only ' + state.population + ' people to tend the fields! Now then,');
+        return;
+      }
+      showMessage('');
+      state.stored -= seedNeed;
+      state.planted = d;
+      resolveYear();
+    };
+  }
+
+  function resolveYear() {
+    var yield_ = randInt(1, 5);
+    var harvest = state.planted * yield_;
+    var loss = 0;
+    if (yield_ % 2 === 0) {
+      loss = Math.floor(state.stored / yield_);
+    }
+    state.stored = state.stored - loss + harvest;
+    state.lastYield = yield_;
+    state.lastRats = loss;
+
+    var increase = Math.floor(yield_ * (20 * state.acres + state.stored) / state.population / 100 + 1);
+    state.lastIncrease = Math.max(0, increase);
+
+    var fedPpl = Math.floor(state.foodGiven / 20);
+    state.lastDied = 0;
+    if (state.population > fedPpl) {
+      state.lastDied = state.population - fedPpl;
+      if (state.lastDied > 0.45 * state.population) {
+        el.report.innerHTML = ('You starved ' + state.lastDied + ' people in one year!!! Due to this extreme mismanagement you have not only been impeached and thrown out of office but you have also been declared national fink!!!!\n\n****************\nSo long for now.').replace(/\n/g, '<br>');
+        el.prompts.innerHTML = '<button onclick="location.reload()">Play again</button>';
+        el.about.classList.remove('hidden');
+        return;
+      }
+      state.diedAvg = ((state.year - 1) * state.diedAvg + state.lastDied * 100 / state.population) / state.year;
+      state.population = fedPpl;
+      state.diedTotal += state.lastDied;
+    }
+    state.population += state.lastIncrease;
+
+    state.plagueNext = rng() < 0.15;
+
+    if (state.population <= 0) {
+      el.report.innerHTML = 'Your kingdom has perished.\n\n****************\nSo long for now.'.replace(/\n/g, '<br>');
+      el.prompts.innerHTML = '<button onclick="location.reload()">Play again</button>';
+      el.about.classList.remove('hidden');
+      return;
+    }
+
+    renderReport();
+    if (!checkGameOver()) {
+      askLandBuy();
+    }
+  }
+
+  function startGame() {
+    state = {
+      year: 0,
+      population: 100,
+      acres: 1000,
+      stored: 2800,
+      lastYield: 3,
+      lastRats: 200,
+      lastDied: 0,
+      lastIncrease: 5,
+      plagueNext: false,
+      plagueJustHit: false,
+      diedTotal: 0,
+      diedAvg: 0,
+      phase: 'report'
+    };
+    el.intro.classList.add('hidden');
+    el.game.classList.remove('hidden');
+    el.about.classList.add('hidden');
+    el.prompts.innerHTML = '';
+    showMessage('');
+    renderReport();
+    if (!checkGameOver()) {
+      askLandBuy();
+    }
+  }
+
+  document.getElementById('btnStart').onclick = startGame;
+})();
+  </script>
+</body>
+</html>
