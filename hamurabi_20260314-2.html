@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hamurabi</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Courier New", Courier, monospace;
+      font-size: 16px;
+      line-height: 1.5;
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 1rem;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+    h1 {
+      font-size: 1.25rem;
+      margin: 0 0 0.5rem 0;
+      color: #c9a227;
+    }
+    #output {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      margin-bottom: 1rem;
+      padding: 0.75rem;
+      background: #0d0d0d;
+      border: 1px solid #333;
+      min-height: 200px;
+      max-height: 60vh;
+      overflow-y: auto;
+    }
+    .input-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    label { flex-shrink: 0; }
+    input[type="number"] {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.35rem 0.5rem;
+      width: 8rem;
+      background: #2a2a2a;
+      border: 1px solid #555;
+      color: #e0e0e0;
+    }
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.35rem 0.75rem;
+      background: #3a3a3a;
+      border: 1px solid #666;
+      color: #e0e0e0;
+      cursor: pointer;
+    }
+    button:hover { background: #4a4a4a; }
+    button:focus, input:focus { outline: 1px solid #c9a227; }
+    .section { margin-top: 0.5rem; font-weight: bold; color: #c9a227; }
+  </style>
+</head>
+<body>
+  <h1>Hamurabi</h1>
+  <p>Rule for 10 years. Manage people, land, and grain.</p>
+  <div id="output"></div>
+  <div class="input-row">
+    <label for="cmd">Your decision:</label>
+    <input type="number" id="cmd" min="-99999" max="99999" step="1" placeholder="Enter number" aria-label="Your decision">
+    <button type="button" id="submit">OK</button>
+    <button type="button" id="restart" style="display:none;">Play again</button>
+  </div>
+
+  <script>
+    (function () {
+      var CONST = {
+        YEARS: 10,
+        FOOD_PER_PERSON: 20,
+        BUSHELS_PER_ACRE: 0.5,
+        ACRES_PER_PERSON: 10,
+        LAND_PRICE_MIN: 17,
+        LAND_PRICE_MAX: 26,
+        HARVEST_MIN: 1,
+        HARVEST_MAX: 5,
+        PLAGUE_CHANCE: 0.15,
+        IMPEACH_PCT: 0.45
+      };
+
+      var state = {
+        year: 0,
+        population: 100,
+        acres: 1000,
+        grain: 2800,
+        landPrice: 0,
+        lastHarvest: 0,
+        lastDeaths: 0,
+        lastNewcomers: 0,
+        lastRats: 0,
+        plague: false,
+        totalDeaths: 0,
+        phase: 'report',
+        fedBushels: 0,
+        seedBushels: 0,
+        planted: 0,
+        gameOver: false,
+        impeached: false
+      };
+
+      var output = document.getElementById('output');
+      var input = document.getElementById('cmd');
+      var submitBtn = document.getElementById('submit');
+      var restartBtn = document.getElementById('restart');
+
+      function randInt(lo, hi) {
+        return Math.floor(Math.random() * (hi - lo + 1)) + lo;
+      }
+
+      function randFloat(lo, hi) {
+        return lo + Math.random() * (hi - lo);
+      }
+
+      function append(text) {
+        output.textContent = output.textContent + text;
+        output.scrollTop = output.scrollHeight;
+      }
+
+      function appendLine(text) {
+        append(text + '\n');
+      }
+
+      function setOutput(text) {
+        output.textContent = text;
+        output.scrollTop = output.scrollHeight;
+      }
+
+      function askPrompt(msg) {
+        appendLine(msg);
+        input.value = '';
+        input.focus();
+      }
+
+      function clampLandDeal() {
+        var val = parseInt(input.value, 10);
+        if (isNaN(val)) return null;
+        if (val > 0) {
+          var maxBuy = Math.floor(state.grain / state.landPrice);
+          return Math.min(val, maxBuy);
+        }
+        if (val < 0) {
+          return Math.max(val, -state.acres);
+        }
+        return 0;
+      }
+
+      function clampFeed() {
+        var val = parseInt(input.value, 10);
+        if (isNaN(val) || val < 0) return 0;
+        return Math.min(val, state.grain);
+      }
+
+      function clampSeed() {
+        var maxAcres = Math.min(state.acres, state.population * CONST.ACRES_PER_PERSON);
+        var maxBushels = Math.floor(maxAcres * CONST.BUSHELS_PER_ACRE);
+        maxBushels = Math.min(maxBushels, state.grain);
+        var val = parseInt(input.value, 10);
+        if (isNaN(val) || val < 0) return 0;
+        return Math.min(val, maxBushels);
+      }
+
+      function runResolution() {
+        var popBeforeStarvation = state.population;
+        var peopleFed = Math.floor(state.fedBushels / CONST.FOOD_PER_PERSON);
+        var starved = popBeforeStarvation - peopleFed;
+        var starvedPct = popBeforeStarvation > 0 ? starved / popBeforeStarvation : 0;
+
+        if (starvedPct >= CONST.IMPEACH_PCT) {
+          state.impeached = true;
+          state.gameOver = true;
+          appendLine('');
+          appendLine('So many people starved in a single year. You have been impeached and thrown out of office.');
+          showFinalAppraisal();
+          return;
+        }
+
+        state.population = peopleFed;
+        state.totalDeaths += starved;
+        if (starved > 0) {
+          appendLine(starved + ' people died of starvation this year.');
+        }
+
+        var harvest = state.planted * randInt(CONST.HARVEST_MIN, CONST.HARVEST_MAX);
+        state.grain += harvest;
+        state.lastHarvest = harvest;
+        appendLine('Harvest: ' + harvest + ' bushels (' + (state.planted > 0 ? (harvest / state.planted).toFixed(1) : 0) + ' per acre).');
+
+        var ratLoss = Math.floor(state.grain * randFloat(0, 0.1));
+        state.grain -= ratLoss;
+        state.lastRats = ratLoss;
+        if (ratLoss > 0) appendLine('Rats destroyed ' + ratLoss + ' bushels.');
+
+        if (Math.random() < CONST.PLAGUE_CHANCE) {
+          state.population = Math.floor(state.population / 2);
+          state.plague = true;
+          appendLine('A horrible plague struck! Half the people have died.');
+        } else {
+          state.plague = false;
+        }
+
+        var newcomers = randInt(0, Math.floor(harvest / 50) + 2);
+        newcomers = Math.min(newcomers, 10);
+        state.population += newcomers;
+        state.lastNewcomers = newcomers;
+        if (newcomers > 0) appendLine(newcomers + ' people came to the city.');
+        state.lastDeaths = starved;
+
+        state.year++;
+        if (state.year > CONST.YEARS) {
+          state.gameOver = true;
+          appendLine('');
+          appendLine('Your ten-year term has ended.');
+          showFinalAppraisal();
+          return;
+        }
+        startYear();
+      }
+
+      function showFinalAppraisal() {
+        appendLine('');
+        appendLine('=== Final appraisal ===');
+        if (state.impeached) {
+          appendLine('You have been thrown out of office.');
+        }
+        var score = 0;
+        if (state.population > 0) {
+          score = Math.floor(5 * Math.min(state.population, state.grain / 25, state.acres * 3 / 20));
+        }
+        appendLine('Population: ' + state.population + ', Land: ' + state.acres + ' acres, Grain: ' + state.grain + ' bushels.');
+        appendLine('Score (well-provided): ' + score + '.');
+
+        var verdict = 'Your heavy-handed performance smacks of Nero and Ivan IV.';
+        if (score >= 200) verdict = 'A fine job! You are remembered as one of the great kings.';
+        else if (score >= 100) verdict = 'You ruled adequately. History will remember you fairly.';
+        else if (score >= 50) verdict = 'Your people found you a mediocre ruler.';
+        appendLine(verdict);
+        appendLine('');
+        appendLine('Refresh the page or click "Play again" to start over.');
+        submitBtn.style.display = 'none';
+        restartBtn.style.display = 'inline-block';
+        input.style.display = 'none';
+      }
+
+      function startYear() {
+        state.landPrice = randInt(CONST.LAND_PRICE_MIN, CONST.LAND_PRICE_MAX);
+        appendLine('');
+        appendLine('--- Year ' + state.year + ' ---');
+        appendLine('Land is trading at ' + state.landPrice + ' bushels per acre.');
+        if (state.year === 1) {
+          appendLine('Hamurabi: I beg to report to you. We have ' + state.population + ' people, ' + state.acres + ' acres, and ' + state.grain + ' bushels of grain.');
+        } else {
+          appendLine('Hamurabi: I beg to report to you.');
+          appendLine('In the previous year ' + state.lastDeaths + ' people starved, and ' + state.lastNewcomers + ' came to the city.');
+          appendLine('We harvested ' + state.lastHarvest + ' bushels. Rats destroyed ' + state.lastRats + ' bushels.');
+          if (state.plague) appendLine('A plague killed half the people.');
+          appendLine('We have ' + state.population + ' people, ' + state.acres + ' acres, and ' + state.grain + ' bushels of grain.');
+        }
+        state.phase = 'land';
+        askPrompt('How many acres do you wish to buy (positive) or sell (negative)?');
+      }
+
+      function onSubmit() {
+        if (state.gameOver) return;
+        var val;
+
+        if (state.phase === 'land') {
+          val = clampLandDeal();
+          if (val === null) {
+            askPrompt('Enter a valid number. How many acres to buy or sell?');
+            return;
+          }
+          state.acres += val;
+          state.grain -= val * state.landPrice;
+          appendLine('You ' + (val >= 0 ? 'bought' : 'sold') + ' ' + Math.abs(val) + ' acres. Now: ' + state.acres + ' acres, ' + state.grain + ' bushels.');
+          state.phase = 'feed';
+          askPrompt('How many bushels do you wish to feed your people?');
+          return;
+        }
+
+        if (state.phase === 'feed') {
+          state.fedBushels = clampFeed();
+          state.grain -= state.fedBushels;
+          appendLine('You will feed the people with ' + state.fedBushels + ' bushels.');
+          state.phase = 'seed';
+          var maxAcres = Math.min(state.acres, state.population * CONST.ACRES_PER_PERSON);
+          var maxBushels = Math.min(Math.floor(maxAcres * CONST.BUSHELS_PER_ACRE), state.grain);
+          askPrompt('How many bushels do you wish to use for seed? (Max ' + maxBushels + ' = ' + (maxBushels * 2) + ' acres.)');
+          return;
+        }
+
+        if (state.phase === 'seed') {
+          state.seedBushels = clampSeed();
+          state.planted = Math.floor(state.seedBushels / CONST.BUSHELS_PER_ACRE);
+          state.grain -= state.seedBushels;
+          appendLine('You will plant ' + state.planted + ' acres.');
+          runResolution();
+        }
+      }
+
+      function init() {
+        state.year = 1;
+        state.population = 100;
+        state.acres = 1000;
+        state.grain = 2800;
+        state.totalDeaths = 0;
+        state.lastHarvest = 0;
+        state.lastDeaths = 0;
+        state.lastNewcomers = 0;
+        state.lastRats = 0;
+        state.plague = false;
+        state.gameOver = false;
+        state.impeached = false;
+        submitBtn.style.display = 'inline-block';
+        restartBtn.style.display = 'none';
+        input.style.display = '';
+        setOutput('Hamurabi – Rule for 10 years. Manage people, land, and grain.\n');
+        startYear();
+      }
+
+      submitBtn.addEventListener('click', onSubmit);
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') onSubmit();
+      });
+      restartBtn.addEventListener('click', init);
+
+      init();
+    })();
+  </script>
+</body>
+</html>
